@@ -126,7 +126,7 @@ hardclock(void)
 	if ((curcpu->c_hardclocks % MIGRATE_HARDCLOCKS) == 0) {
 		thread_consider_migration();
 	}
-	thread_yield();
+	// thread_yield();
 }
 
 /*

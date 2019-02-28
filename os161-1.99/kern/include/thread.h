@@ -70,6 +70,7 @@ struct thread {
 	 * These go up front so they're easy to get to even if the
 	 * debugger is messed up.
 	 */
+	int t_time;
 	char *t_name;			/* Name of this thread */
 	const char *t_wchan_name;	/* Name of wait channel, if sleeping */
 	threadstate_t t_state;		/* State this thread is in */

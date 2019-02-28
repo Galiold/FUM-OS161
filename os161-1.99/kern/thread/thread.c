@@ -32,6 +32,8 @@
  */
 
 #define THREADINLINE
+#define NTHREADS 8
+
 
 #include <types.h>
 #include <kern/errno.h>
@@ -56,6 +58,8 @@
 
 /* Magic number used as a guard value on kernel thread stacks. */
 #define THREAD_STACK_MAGIC 0xbaadf00d
+
+int highestTwoPower(int nthreads);
 
 /* Wait channel. */
 struct wchan {
@@ -133,6 +137,7 @@ thread_create(const char *name)
 		kfree(thread);
 		return NULL;
 	}
+	thread->t_time = 0;
 	thread->t_wchan_name = "NEW";
 	thread->t_state = S_READY;
 
@@ -524,10 +529,10 @@ thread_fork(const char *name,
 	 * for the spllower() that will be done releasing it.
 	 */
 	newthread->t_iplhigh_count++;
+	newthread->t_time = data2;
 
 	/* Set up the switchframe so entrypoint() gets called */
 	switchframe_init(newthread, entrypoint, data1, data2);
-
 	/* Lock the current cpu's run queue and make the new thread runnable */
 	thread_make_runnable(newthread, false);
 
@@ -826,6 +831,15 @@ thread_yield(void)
  * the current CPU's run queue by job priority.
  */
 
+int
+highestTwoPower(int nthreads)
+{
+	int startPoint = 1;
+	while (startPoint < nthreads)
+		startPoint *= 2;
+	return startPoint;
+}
+
 void
 schedule(void)
 {
@@ -833,6 +847,55 @@ schedule(void)
 	 * You can write this. If we do nothing, threads will run in
 	 * round-robin fashion.
 	 */
+
+	if(curcpu->c_isidle)
+	{
+		return;
+	}
+
+
+	struct threadlistnode *temp;
+	temp = curcpu->c_runqueue.tl_head.tln_next;
+
+	if (temp->tln_next == NULL)
+	{
+		return ;
+	}
+
+	int checkNumber = 1;
+	bool found = false;
+	bool allPowerTwoFound = false;
+	while(!found){
+		temp = curcpu->c_runqueue.tl_head.tln_next;
+		while (temp->tln_next->tln_self != NULL)
+		{
+			if(temp->tln_self->t_time == checkNumber)
+			{
+				found = true;
+				temp->tln_self->t_state = S_READY;
+				spinlock_acquire(&curcpu->c_runqueue_lock);
+				threadlist_remove(&curcpu->c_runqueue,temp->tln_self);
+				threadlist_addhead(&curcpu->c_runqueue,temp->tln_self);
+				spinlock_release(&curcpu->c_runqueue_lock);
+			}
+			else temp->tln_self->t_state=S_SLEEP;
+			temp = temp ->tln_next;
+		}
+		if (!allPowerTwoFound)
+		{
+			checkNumber *= 2;
+			if (checkNumber == highestTwoPower(NTHREADS))
+			{
+				checkNumber = 0;
+				allPowerTwoFound = true;
+			}
+		}
+		else
+			checkNumber++;
+			
+		if (checkNumber == NTHREADS + 1)
+			break;
+	}
 }
 
 /*
